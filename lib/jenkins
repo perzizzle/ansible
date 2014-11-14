@@ -10,7 +10,6 @@ def main():
             build            = dict(required=True),
             artifact         = dict(required=True),
             findArtifact     = dict(required=True, choices=BOOLEANS),
-            lastBuild        = dict(required=True), #, choices=BOOLEANS),
             writeDescription = dict(required=True, choices=BOOLEANS)
         ),
     #Future expansion
@@ -23,12 +22,11 @@ def main():
     artifact = params['artifact']
     build = params['build']
     findArtifact = params['findArtifact']
-    lastBuild = params['lastBuild']
     writeDescription = params['writeDescription']
     relativePath = "false"
     
-    #If lastBuild true, set buld to last stable build
-    if lastBuild:
+    #If build == last, set buld to last stable build
+    if build == "LAST":
         url = "http://jenkins.surescripts.local:18200/job/{0}/lastStableBuild/api/json?tree=number".format(repository)
 	data = urllib2.urlopen(url)
         jdata = json.load(data)
@@ -50,7 +48,7 @@ def main():
         changed = False
         module.fail_json(msg='Unable to find relative path for artifact')
 
-    module.exit_json(repository=repository, build=build, artifact=artifact, findArtifact=findArtifact, lastBuild=lastBuild, writeDescription=writeDescription, relativePath=relativePath, changed=changed)
+    module.exit_json(repository=repository, build=build, artifact=artifact, findArtifact=findArtifact, writeDescription=writeDescription, relativePath=relativePath, changed=changed)
 
 
 from ansible.module_utils.basic import *
