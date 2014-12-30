@@ -1,0 +1,6 @@
+---
+- name: Linux Deployment Playbook
+  hosts: all
+  gather_facts: false
+  roles:
+    - linuxDeploy

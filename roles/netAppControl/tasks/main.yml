@@ -1,0 +1,8 @@
+---
+    #Place F5 work here
+    #Playbook supports start|stop|restart|auto|disable|manual
+- name: Execute SurescriptsServiceControl.ps1 {{ command }}
+  script:  SurescriptsServiceControl.ps1 {{ command }}
+  register: output
+
+- debug: msg="{{ output }}"

@@ -1,0 +1,15 @@
+---
+- name: Ansible Vault Test
+  hosts: all
+  gather_facts: false
+
+  tasks:
+  - include_vars: "/etc/ansible/group_vars/{{env}}/{{datacenter}}/secure.yml"
+
+  - name: echo value
+    shell: echo {{ key }} > key.txt
+    delegate_to: 127.0.0.1
+    register: output
+
+  - debug: msg={{ output }}
+  

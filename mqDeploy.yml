@@ -1,0 +1,8 @@
+---
+- name:  MQ Role
+  hosts: all
+  gather_facts: false
+  sudo_user: mqm
+  roles:
+    - mqDeploy
+

@@ -1,0 +1,6 @@
+- name: Linux Config Deploy Playbook
+  hosts: all
+  gather_facts: false
+  roles:
+    - deployLinuxConfig
+

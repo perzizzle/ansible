@@ -1,0 +1,51 @@
+---
+- name: Do some jenkins
+  jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=yes 
+  register: jenkins_output
+  delegate_to: 127.0.0.1
+  run_once: true
+
+- name: Set ansible staging folder path
+  set_fact: stagingFolder="/data01/downloads/{{ repository }}/{{ appName }}/{{ jenkins_output.build }}/"
+
+- name: Set deploy fact
+  set_fact: deploy={{ vars.tower_job_id }}
+
+- name: Create local directories
+  file: path={{ stagingFolder }}/deploy state=directory #owner=awx group=awx mode=2770 state=directory
+  delegate_to: 127.0.0.1
+  run_once: true
+
+- name: dump out playbook variables
+  action: template src=variables.j2 dest={{ stagingFolder }}/vars.json
+  delegate_to: 127.0.0.1
+
+- name: Get deploy tools
+  get_url:  "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/deploy.zip  dest={{ stagingFolder }}"
+  delegate_to: 127.0.0.1
+  run_once: true
+
+- name: Unzip deploy tools
+  unarchive: src={{ stagingFolder }}deploy.zip dest={{ stagingFolder }}deploy/ copy=no #group=awx owner=awx mode=2770 copy=no
+  delegate_to: 127.0.0.1
+  run_once: true
+  ignore_errors: true
+  #This is a hack for some reason unzip is failing when it really is succeeding
+
+- name: Get Artifact
+  get_url: "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }} dest={{ stagingFolder }}"
+  delegate_to: 127.0.0.1
+
+#Could add a local_action to take server out of F5 here
+
+- name: Deploy Launcher
+  script: deployLauncher.ps1 -env {{ env }} -name {{ name }} -job {{ repository }} -build {{ jenkins_output.build }} -deploy {{ deploy }} -appName {{ appName }} -artifacts {{ artifacts }}  -installArguments "{{ installArguments }}" -stage {{ stage }}
+  register: deployLauncher
+- debug: var=deployLauncher
+
+- name: Clean up old packages, keep the 3 most recent builds (only cleans within a repository)
+  shell:  find /data01/downloads/{{ repository }}/{{ appName }}  -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | head -n -3 | xargs echo #rm -rf
+  register: cleanup
+  delegate_to: 127.0.0.1
+
+- debug: msg="{{ cleanup }}"

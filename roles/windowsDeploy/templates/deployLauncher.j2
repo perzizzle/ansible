@@ -1,0 +1,96 @@
+$env= "{{ env }}"
+$name = "{{ name }}"
+$job = "{{ repository }}"
+$build = "{{ build }}"
+$deploy = "{{ deploy }}"
+$stage = {{ stage }}
+$appName = "{{ appName }}"
+$artifacts = @( {{ artifacts }} )
+$installArguments = @{ {{installArguments }} }
+
+Write-Output "Env: $env Name: $appName Repository/Job: $job Build: $build Deploy: $deploy Stage: $stage AppName: $appName Artifacts: $artifacts InstallArguments: $installArguments"
+
+#. ('{0}\common\LoadCommon.ps1' -f $PSScriptRoot) 
+. D:\!surescripts\bin\common\LoadCommon.ps1
+
+function Get-InstallSettings
+{   
+	[cmdletbinding()]
+	param([Parameter(Mandatory=$true,Position=0)] [string] $Path)
+	$json = Get-Content -Path $Path -Raw
+	$settings = ConvertFrom-Json $json
+	Write-Output $settings
+}
+
+function Extract-Artifact
+{
+	param(
+	[string] $artifactPath, 
+	[string] $installdirectory)
+
+	if(!(Test-Path "$installdirectory\_install")){
+		Write-Host ('Extracting install folder from {0}' -f $artifactPath )
+		New-Path -path "$installdirectory\_install" -Force
+		Extract-ZipFile -source $artifactpath -destination $installdirectory -include '_install'
+	}else{
+		Write-Host ('Install folder {0} already exists.' -f $installdirectory)
+	}
+
+	Write-Host ('Retrieving install setting from {0}' -f "$installdirectory\_install\install.json" )
+	$settings = Get-InstallSettings -Path "$installdirectory\_install\install.json"
+	$destination = "{0}\{1}\{2}" -f $settings.Settings.path, $name, $deploy
+
+	if(!(Test-Path $destination)){
+		Write-Host ("Extracting package {0} to {1}." -f $artifactpath, $destination)
+		New-Path -path $destination -force                 
+		Extract-ZipFile -source $artifactpath -destination $destination -exclude '_install'   
+	}else{
+		Write-Host ("Application folder {0} already exists." -f $destination)
+	}
+
+	Write-Output $destination
+}
+
+function Install-Artifact{
+	param(
+	[string] $installdirectory,
+	[string] $applicationDirectory) 
+	
+	$installpath = "{0}\_install\install.ps1" -f $installdirectory
+	Write-Host ("Launch install script: {0}" -f $installpath)
+	& $installpath $env $applicationDirectory $name $appname $installArguments
+}
+
+try{
+	$hostname = [System.Net.Dns]::GetHostByName((hostname)).HostName.toLower()
+	
+	Write-Host "----------------------------------------------------------------------------------------------------"
+	Write-Host ("Deploying {0}\{1}\{2} to {3} with in {4} ..." -f $job, $build, $name, $hostname, $env)
+	Write-Host "----------------------------------------------------------------------------------------------------"
+
+	Write-Host ('Artifacts: {0}' -f ($artifacts -join ', '))
+	$packageDirectory = "C:\!Surescripts\package\{0}\{1}" -f $job, $build
+	foreach($artifact in $artifacts){
+		$artifactpath = "{0}\{1}" -f $packageDirectory, $artifact
+		Write-Host ('Testing {0} for an install folder' -f $artifact)
+		Write-Host ('Artifact Path: {0}' -f $artifactpath)
+		if(Test-ZipPath -Path "$artifactpath\_install" ){
+			$installdirectory = '{0}\{1}' -f  $packageDirectory, [System.IO.Path]::GetFileNameWithoutExtension($artifactpath)
+			$applicationDirectory = Extract-Artifact -installdirectory $installdirectory -artifactPath $artifactpath                
+			if(!$stage){
+				Install-Artifact -installdirectory $installdirectory -applicationDirectory $applicationDirectory
+			}
+		}
+		else{
+			Write-Host ('{0} is not installable' -f $artifact)
+		}
+	}
+
+	Write-Host "Removing old $name packages"
+	Remove-OlderBuilds (Get-Item $packageDirectory | %{ $_.Parent.FullName})
+}
+catch{
+	#Crossing Remoting Boundary
+	Write-Exception $_.Exception
+	throw $_        
+}

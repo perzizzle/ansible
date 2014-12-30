@@ -1,0 +1,234 @@
+---
+- name: Do some jenkins
+  jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=yes 
+  register: jenkins_output
+  delegate_to: 127.0.0.1
+  run_once: true
+  tags: 
+    - stage
+    - config
+  
+#- name: Get current time stamp
+#  shell: date '+%Y%m%d-%H%M%S'
+#  register: timestamp
+#  tags: stage
+
+- name: Set remote app folder
+  set_fact: remoteFolder="/app/uid/{{ appName }}/"
+  tags: 
+    - stage
+    - activate
+    - rollback
+    - config
+
+- name: stat of latest deploy symlink
+  stat: path={{ remoteFolder}}latest_deploy
+  register: latest_deploy
+  tags:
+    - stage
+    - activate
+    - rollback
+
+- name: stat of previous deploy symlink
+  stat: path={{ remoteFolder}}previous_deploy
+  register: previous_deploy
+  tags:
+    - stage
+    - activate
+    - rollback
+
+- name: stat of current symlink
+  stat: path={{ remoteFolder}}current
+  register: current
+  tags:
+    - stage
+    - activate
+    - rollback
+
+#- name: define deploy
+# set_fact: deploy={{ jenkins_output.build }}-{{ timestamp.stdout }}
+# tags: stage
+  
+- name: Set deploy fact to tower job id
+  set_fact: deploy={{ vars.tower_job_id }}
+  tags:
+    - config
+    - stage
+
+- name: Set remote application install directory
+  set_fact: remoteBuildFolder="/app/uid/{{ appName }}/{{ deploy }}/"
+  tags:
+    - stage
+
+- name: Set remote package directory
+  #May want to define a different path with a larger disk
+  set_fact: remotePackageFolder="/app/uid/{{ appName }}/{{ deploy }}/"
+  tags:
+    - stage
+
+- name: Set local package folder
+  #do we want to download the package every time???
+  set_fact: localPackageFolder="/data01/downloads/{{ repository }}/{{ appName }}/{{ deploy }}/"
+  tags:
+    - stage
+    - config
+
+- name: Create local directories
+  file: path={{ localPackageFolder }} owner=awx group=awx mode=0777 state=directory
+  delegate_to: 127.0.0.1
+  run_once: true
+  tags:
+    - stage
+    - config
+  
+- name: Set permissions on {{ remoteFolder }}
+  file: path={{ remoteFolder }} state=directory group={{ account }} mode=2775
+  tags: stage
+
+- name: Create remote directories
+  file: path={{ remotePackageFolder }} state=directory #owner={{ account }} group={{ account }} mode=0777
+  tags: stage
+
+- name: Create remote folder location
+  file: path={{ remoteBuildFolder }} state=directory #owner={{ account }} group={{ account }} state=directory
+  tags: stage
+
+- name: Create ss_app directory
+  file: path=/app/uid/ss_apps state=directory #owner={{ account }} group={{ account }}
+  tags: stage
+  
+- name: Create config file for ss_app_manager
+  template: src=ss_app.j2 dest=/app/uid/ss_apps/{{ appName }} #owner={{ account }} group={{ account }}
+  tags: activate
+
+- name: Get Artifact
+  get_url: "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }} dest={{ localPackageFolder }}"
+  delegate_to: 127.0.0.1
+  tags:
+    - stage
+    - config
+
+- name: Copy artifact to the server
+  copy: src={{ localPackageFolder }}  dest={{ remotePackageFolder}} #owner={{ account }} group={{ account }} mode="2770"
+  tags: stage
+
+- name: unarchive the artifact
+  unarchive: src={{ remotePackageFolder }}{{ artifacts }} dest={{ remoteBuildFolder }}  copy=no
+  tags: stage
+
+#- name: Create log directory
+#  file: path={{ remoteBuildFolder }}{{ appName }}/logs state=directory mode=2660 group={{ account }}
+#  tags: stage
+
+- name: change remote folder group
+  #file: path={{ remoteBuildFolder }} group={{ account }} state=directory mode=0660 recurse=yes #follow=yes only available in 1.8
+  command: chgrp -R {{ account }} {{ remoteBuildFolder }}
+  tags: stage
+
+- name: update remote folder permissions
+  command: chmod -R gu+rw {{ remoteBuildFolder }}
+  tags: stage
+
+- name: make shell scripts executable
+  command: find {{ remoteFolder }} -name *.sh -type f -exec chmod gu+x {} \;
+  tags: stage
+
+- name: find post_install script
+  shell: find {{ remoteBuildFolder }} -name 'post_install' -o -name 'post_install.sh'
+  register: post_install
+  tags: stage
+
+- name: run post_install script
+  shell: ". /etc/profile; {{ post_install.stdout }}"
+  when: post_install.stdout|trim != ""
+  register: post_install_output
+  tags: stage
+
+- debug: msg="{{ post_install_output }}"
+  tags: stage
+
+- name: Set previous when latest exists
+  file: src={{ latest_deploy.stat.lnk_source }} dest={{ remoteFolder}}previous_deploy group={{ account }} state=link
+  when: latest_deploy.stat.exists
+  tags: stage
+
+- name: Set latest deploy
+  file: src={{ remoteBuildFolder }} dest={{ remoteFolder}}latest_deploy group={{ account }} state=link
+  tags: stage
+
+- name: cleanup old packages
+  # find all directories, under the root folder, only one directory deep, print their created time and full path, sort by the time,
+  # remove the timestamp part of the output, grab only the 3 oldest records, remove those directories
+  # see https://stackoverflow.com/questions/16190845/trying-to-delete-all-but-most-recent-2-files-in-sub-directories for the inspiration
+  #Set to echo uncomment the rm -rf to delete
+  shell: find {{ remoteFolder }} -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | head -n -3 | xargs rm -rf #echo
+  register: remote_cleanup
+  tags: stage
+
+- debug: msg="{{ remote_cleanup }}"
+  tags: stage
+
+- name: Clean up old packages, keep the 3 most recent builds (only cleans within a repository)
+  shell:  find {{ localPackageFolder  }}  -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | head -n -3 | xargs rm -rf #echo
+  register: local_cleanup
+  delegate_to: 127.0.0.1
+  tags: stage
+
+- debug: msg="{{ local_cleanup }}"
+  tags: stage
+#
+- name: Rollback to old version by settings current to previous deploy
+  file: src={{ previous_deploy.stat.lnk_source }} dest={{ remoteFolder }}current group={{ account }} state=link
+  when: previous_deploy.stat.exists
+  tags: rollback
+
+- name: stop script
+  shell: sudo /sbin/service ss_app_manager {{ appName }} stop 
+  #sudo: yes
+  register: stop
+  when: current.stat.exists
+  tags: 
+    - activate
+    - rollback
+
+- name: stat of latest deploy symlink in case it has changed
+  stat: path={{ remoteFolder}}latest_deploy
+  register: latest_deploy
+  tags:
+    - stage
+    - activate
+
+- name: update symlink to current package
+  file: src={{ latest_deploy.stat.lnk_source }} dest={{ remoteFolder}}current group={{ account }} state=link
+  tags: activate
+ 
+- name: Unzip archive to get config file
+  unarchive: src={{ localPackageFolder }}{{ artifacts }} dest={{ localPackageFolder  }}  copy=no
+  delegate_to: 127.0.0.1
+  run_once: true
+  tags: config
+ 
+ #This step is dependent on the current symlink
+- name: Create app configuration file
+  template: src={{ localPackageFolder }}/{{ config_source }}/{{ config_name }}.j2 dest={{ remoteFolder }}/current/{{ config_dest }}/{{ config_name }} group={{ account }} mode=0770
+  tags: config
+
+- name: start updated application
+  shell: sudo /sbin/service ss_app_manager {{ appName }} start 
+  #sudo: yes
+  register: start
+  tags: 
+    - activate
+    - rollback
+
+- name: status of application
+  shell: sudo /sbin/service ss_app_manager {{ appName }} status
+  #sudo: yes
+  register: status
+  tags: 
+   - activate
+   - rollback
+ 
+- name: Create VERSION file
+  template: src=VERSION.j2 dest={{ remoteBuildFolder }}/VERSION group={{ account }} #owner={{ account }}
+  tags: stage

@@ -1,0 +1,11 @@
+---
+- name: Hello World Windows
+  #hosts: windows
+  hosts: all
+
+  tasks:
+  
+  - name: Hello
+    script: hello.ps1
+    register: echo
+  - debug: var=echo

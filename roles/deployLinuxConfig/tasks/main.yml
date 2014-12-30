@@ -1,0 +1,64 @@
+---
+#What you want to do?				Tags
+#Push out ansible template		template
+#Push out file from stash			stash
+#Push out file from jenkins			jenkins
+#Unzip file									unzip
+#Set directory permissions			permissions
+#Run post_install						postInstall
+#It's possible to choose multiple tags for example jenkins, unzip, postInstall in your job
+
+- name: Create remote directory
+  file: path={{ destination }} state=directory group={{ group }} mode={{ mode}}
+  sudo: true
+  tags: 
+    - template
+    - stash
+    - jenkins
+  
+- name: Create config file
+  template: src={{ config }}.j2  dest={{ destination }}/{{ config }} group={{ group }} mode={{ mode }} #owner={{ owner }}
+  sudo: true
+  tags: template
+  
+- name: Get config file from stash
+  get_url: url={{ url }} dest=/tmp/{{ config }}
+  delegate_to: 127.0.0.1
+  tags: stash
+
+- name: Copy config file to app server
+  copy: src=/tmp/{{ config }} dest={{ destination }}/{{ config }} group={{ group }} mode={{ mode }} #owner= {{ owner }}
+  tags: stash
+
+- name: Do some jenkins
+  jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=no
+  register: jenkins_output
+  delegate_to: 127.0.0.1
+  run_once: true
+  tags: jenkins
+
+- name: Get Artifact
+  get_url: "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }} dest={{ destination}}"
+  tags: jenkins
+
+- name: Unzip config files
+  unarchive: copy=no src={{ destination }}/{{ artifacts }} dest={{ destination }} group={{ group }} mode={{ mode }}
+  sudo: true
+  tags: unzip
+  
+- name: Set file permissions
+  file: path={{ destination }}/ mode={{ mode }} group={{ group }} recurse=yes state=directory
+  sudo: true
+  tags: permissions
+
+- name: Find post_install.sh
+  shell: find {{ destination }} -name 'post_install' -o -name 'post_install.sh'
+  register: post_install
+  tags: postInstall
+  
+- name: Run post_install script
+  command: "{{ post_install.stdout }}"
+  when: post_install.stdout|trim != ""
+  tags: postInstall
+
+  

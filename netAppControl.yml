@@ -1,0 +1,6 @@
+---
+- name:  Net Application Control
+  hosts: all
+  gather_facts: false
+  roles:
+    - netAppControl

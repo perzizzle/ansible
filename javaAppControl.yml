@@ -1,0 +1,31 @@
+---
+- name: Java Control Playbook 
+  hosts: all
+
+  tasks:
+    #Place F5 work here
+    #Playbook supports start|stop|restart|status for individual apps or all
+  - name: Execute ss_app_manager
+    shell: /sbin/service ss_app_manager {{ command }} {{ appName }}
+    register: output
+    when: command=="stop" or command=="start" or command=="status" 
+
+  - name: Execute ss_app_manager
+    shell: /sbin/service ss_app_manager stop {{ appName }}
+    register: stop
+    when: command=="restart"
+
+  - name: Execute ss_app_manager
+    shell: /sbin/service ss_app_manager start {{ appName }}
+    register: start
+    when: command=="restart"
+
+  - debug: msg="{{ output }}"
+    when: command=="stop" or command=="start" or command=="status"
+
+  - debug: msg="{{ stop }}"
+    when: command=="restart"
+
+  - debug: msg="{{ start }}"
+    when: command=="restart"
+

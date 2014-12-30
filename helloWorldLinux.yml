@@ -1,0 +1,11 @@
+---
+- name: Hello World Linux
+  hosts: all
+  gather_facts: false
+
+  tasks:
+  - name: Hello World Linux
+    shell: echo "hello world my message for you " {{ message }}
+    register: echo
+
+  - debug: var=echo

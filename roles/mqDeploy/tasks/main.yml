@@ -1,0 +1,173 @@
+---
+- name: get mqsc file
+  get_url:  url=http://stash.surescripts-dev.qa:7990/projects/DEV/repos/burgundy/browse/Automated%20Build/MQ/DotNet_Queue_Manager.mqsc?raw dest=/tmp/queue_manager.mqsc
+  when: language == "net"
+  tags:
+    - install
+    - update
+
+- name: get mqsc file
+  get_url:  url=http://stash.surescripts-dev.qa:7990/projects/DEV/repos/deploy-tools/browse/mq/qmgrs/Java_Queues.mqsc?raw dest=/tmp/queue_manager.mqsc
+  when: language=="java"
+  tags:
+    - install
+    - update
+
+- name: create primary queue managers
+  shell: /app/mqm/bin/crtmqm {{ crtmqm_params }} -ld {{ mq_log_path }}  {{ prim_queue_name }}
+  sudo: yes
+  ignore_errors: true
+  tags:
+    - install
+
+- name: create secondary queue managers
+  shell: /app/mqm/bin/crtmqm {{ crtmqm_params }} -ld {{ mq_log_path }}  {{ sec_queue_name }}
+  sudo: yes
+  when: language=="java"
+  ignore_errors: true
+  tags:
+    - install
+
+- name: Update primary qm.ini
+  template: src={{ prim_queue_name }}.qm.ini.j2 dest=/app/mqm/qmgrs/{{ prim_queue_name }}/qm.ini owner=mqm group=mqm mode=0764
+  sudo: yes
+  tags:
+    - install
+
+- name: Update secondary qm.ini 
+  template: src={{ sec_queue_name }}.qm.ini.j2 dest=/app/mqm/qmgrs/{{ sec_queue_name }}/qm.ini owner=mqm group=mqm mode=0764
+  sudo: yes
+  when: language=="java"
+  tags:
+    - install
+
+- name: create mq_init.conf
+  template: src=mq_init.conf.j2 dest=/app/mqm/mq_init.conf owner=mqm group=mqm mode=0764
+  sudo: yes
+  tags:
+    - install
+
+- name: add secondary queue to mq_init.conf
+  lineinfile: dest=/app/mqm/mq_init.conf line="{{ sec_queue_name }} port {{ sec_queue_port }}" insertafter=EOF create=True
+  sudo: yes
+  when: language=="java"
+  tags:
+    - install
+
+- name: get primary queue status
+  shell: /app/mqm/bin/dspmq | grep {{ prim_queue_name }}
+  register: primary_status
+  failed_when: primary_status.stderr
+  tags:
+    - install
+
+- name: get secondary queue status
+  shell: /app/mqm/bin/dspmq | grep {{ sec_queue_name }}
+  register: secondary_status
+  failed_when: secondary_status.stderr
+  tags:
+    - install
+
+- name: stop primary queue managers
+  shell: /app/mqm/bin/endmqm {{ prim_queue_name }}
+  when: "'Running' in primary_status.stdout"
+  register: primary_stop_output
+  sudo: yes
+  tags:
+    - install
+
+- name: stop secondary queue managers
+  shell: /app/mqm/bin/endmqm {{ sec_queue_name }}
+  register: secondary_stop_output
+  sudo: yes
+  when: "'Running' in secondary_status.stdout"
+  tags:
+    - install
+
+- name: pause 30 seconds to let queue stop
+  #look for more elegant solution using wait_for
+  pause: seconds=30
+  tags:
+    - install
+
+- name: get primary queue status
+  shell: /app/mqm/bin/dspmq | grep {{ prim_queue_name }}
+  register: primary_status
+  failed_when: primary_status.stderr
+  tags:
+    - install
+
+- name: get secondary queue status
+  shell: /app/mqm/bin/dspmq | grep {{ sec_queue_name }}
+  register: secondary_status
+  failed_when: secondary_status.stderr
+  tags:
+    - install
+
+- name: start up primary queue managers
+  shell: /app/mqm/bin/strmqm {{ prim_queue_name }}
+  when: "'Running' not in primary_status.stdout"
+  sudo: yes
+  tags:
+    - install
+
+- name: start up secondary queue managers
+  shell: /app/mqm/bin/strmqm {{ sec_queue_name }}
+  sudo: yes
+  when: language=="java" and "'Running' not in secondary_status.stdout"
+  tags:
+    - install
+
+- name: install the qm configuration
+  shell: /app/mqm/bin/runmqsc  {{ prim_queue_name }} < /tmp/queue_manager.mqsc
+  register: qm_config
+  register: shell_result
+  failed_when: "'Syntax error detected' in shell_result.stderr"
+  sudo: yes
+  tags:
+    - install
+    - update
+
+- name: install the qm configuration
+  shell: /app/mqm/bin/runmqsc  {{ sec_queue_name }} < /tmp/queue_manager.mqsc
+  register: shell_result
+  failed_when: "'Syntax error detected' in shell_result.stderr"
+  sudo: yes
+  when: language=="java"
+  tags:
+    - install
+    - update
+
+- name: create primary listener definition
+  shell: echo "DEFINE LISTENER ({{ prim_queue_name }} ) TRPTYPE(TCP)  CONTROL (QMGR) PORT ({{ prim_queue_port }})" > /tmp/{{ prim_queue_name }}_listener.txt
+  tags:
+    - install
+
+- name: create secondary listener definition
+  shell: echo "DEFINE LISTENER ({{ sec_queue_name }} ) TRPTYPE(TCP)  CONTROL (QMGR) PORT ({{ sec_queue_port }})" > /tmp/{{ sec_queue_name }}_listener.txt
+  when: language=="java"
+  tags:
+    - install
+
+- name: define primary listener
+  shell: /app/mqm/bin/runmqsc  {{ prim_queue_name }} < /tmp/{{ prim_queue_name }}_listener.txt
+  sudo: yes
+  register: shell_result
+  failed_when: "'Syntax error detected' in shell_result.stderr"
+  tags:
+    - install
+
+- name: define secondary listener
+  shell: /app/mqm/bin/runmqsc  {{ sec_queue_name }} < /tmp/{{ sec_queue_name }}_listener.txt
+  sudo: yes
+  when: language=="java"
+  register: shell_result
+  failed_when: "'Syntax error detected' in shell_result.stderr"
+  tags:
+    - install
+
+- name: restart primary and secondary queue managers
+  shell: sudo /sbin/service mqm restart
+  tags:
+    - install
+    - restart
