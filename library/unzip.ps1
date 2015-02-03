@@ -9,10 +9,13 @@ $result = New-Object PSObject -Property @{
     changed = $false
 	success = $false
 	output = ""
+	source = ""
+	destination = ""
 }
 
 If ($params.source) {
     $source = $params.source
+	$result.source = $source
 }
 Else {
     Fail-Json $result "missing required argument: source"
@@ -20,6 +23,7 @@ Else {
 
 If ($params.destination) {
     $destination = $params.destination
+	$result.destination = $destination
 }
 Else {
     Fail-Json $result "missing required argument: destination"
@@ -61,7 +65,8 @@ try {
 	
 }
 catch {
-        Fail-Json $result $_.Exception.Message
+	$result.output += $_.Exception.Message
+	Fail-Json  $result
 }
 
 If ($result.success) {
