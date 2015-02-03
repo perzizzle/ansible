@@ -117,9 +117,9 @@ def main():
 
 		# If there is no comment, create one from env
 		if len(currentComment) <= 1:   # quirk w/ testing in Jenkins: you cannot reset a comment to '', only to ' '. 
-			newComment = 'Deployed ' + artifact + ' to ' + env + ' on ' + time.strftime("%b %d %X")  # if this is first comment, don't prefix w/ space
+			newComment = 'Deployed ' + artifact + ' to ' + env + ' on ' + time.strftime("%m/%d/%y %H:%M")  # if this is first comment, don't prefix w/ space
 		else:
-			newComment = currentComment + ' Deployed ' + artifact + ' to ' + env + ' on ' + time.strftime("%b %d %X")
+			newComment = 'Deployed ' + artifact + ' to ' + env + ' on ' + time.strftime("%m/%d/%y %H:%M") + ' ' + currentComment
 		postData = {'description':newComment}
 		postUrl = jenkinsUrl + '/job/' + repository + '/' + str(build) + '/submitDescription'
 

@@ -1,0 +1,50 @@
+---
+#What you want to do?				Tags
+#Push out ansible template		template
+#Push out file from stash			stash
+#Push out file from jenkins			jenkins
+#Unzip file									unzip
+#Set directory permissions			permissions
+#It's possible to choose multiple tags for example jenkins, unzip
+
+- name: Create remote directory
+  raw: 'mkdir {{ destination }}'
+  register: command_result
+  failed_when: "'ERROR' in command_result.stderr"
+  tags: 
+    - template
+    - stash
+    - jenkins
+
+#Remove comments when win_template ready  
+#- name: Create template config file
+#  win_template: src={{ config }}.j2  dest={{ destination }}/{{ config }}
+#  tags: template
+  
+- name: Get config file from stash
+  get_url: url={{ url }} dest=/data01/downloads/{{ config }}
+  delegate_to: 127.0.0.1
+  tags: stash
+  
+- name: Copy file from ansible server to app server
+  win_get_url:
+    url: 'http://ansible.surescripts-dev.qa:8000/{{ config }}'
+    dest: '{{ destination }}'
+  tags: stash
+
+- name: Find artifact in jenkins
+  jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=no
+  register: jenkins_output
+  delegate_to: 127.0.0.1
+  run_once: true
+  tags: jenkins
+  
+- name: Copy artifact from ansible server to app server
+  win_get_url:
+    url: 'http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }}'
+    dest: '{{ destination }}\{{ artifacts }}'
+  tags: jenkins
+
+- name: Unzip config files
+  unzip: source={{ destination }}\{{ artifacts }} destination={{ destination }}
+  tags: unzip

@@ -1,5 +1,10 @@
 ---
-- name: Do some jenkins
+- name: Get secure vars
+  include_vars: "{{ env }}/{{ datacenter }}/secure.yml"
+  when: env=="production" or env=="staging" or env=="beta"
+  no_log: true
+
+- name: Find artifact
   jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=yes 
   register: jenkins_output
   delegate_to: 127.0.0.1
@@ -9,43 +14,56 @@
   set_fact: stagingFolder="/data01/downloads/{{ repository }}/{{ appName }}/{{ jenkins_output.build }}/"
 
 - name: Set deploy fact
-  set_fact: deploy={{ vars.tower_job_id }}
+  set_fact: deploy={{ tower_job_id }}
 
 - name: Create local directories
   file: path={{ stagingFolder }}/deploy state=directory #owner=awx group=awx mode=2770 state=directory
   delegate_to: 127.0.0.1
   run_once: true
-
-- name: dump out playbook variables
-  action: template src=variables.j2 dest={{ stagingFolder }}/vars.json
-  delegate_to: 127.0.0.1
-
-- name: Get deploy tools
-  get_url:  "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/deploy.zip  dest={{ stagingFolder }}"
-  delegate_to: 127.0.0.1
-  run_once: true
-
-- name: Unzip deploy tools
-  unarchive: src={{ stagingFolder }}deploy.zip dest={{ stagingFolder }}deploy/ copy=no #group=awx owner=awx mode=2770 copy=no
-  delegate_to: 127.0.0.1
-  run_once: true
-  ignore_errors: true
-  #This is a hack for some reason unzip is failing when it really is succeeding
-
+  
 - name: Get Artifact
   get_url: "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }} dest={{ stagingFolder }}"
   delegate_to: 127.0.0.1
 
+- name: Find deploy tools
+  jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact=deploy.zip findArtifact=yes writeDescription=no
+  register: jenkins_output
+  delegate_to: 127.0.0.1
+  run_once: true
+
+- name: Get deploy tools
+  get_url:  "url=http://jenkins.surescripts.local:18200/job/{{ repository }}/{{ jenkins_output.build }}/artifact/{{ jenkins_output.relativePath }}  dest={{ stagingFolder }}"
+  delegate_to: 127.0.0.1
+  run_once: true
+
+- name: Create remote directories
+  raw: 'mkdir C:\\!Surescripts\\package\\{{ repository }}\\{{ build }}'
+  register: command_result
+  failed_when: "'ERROR' in command_result.stderr"
+
+- name: Copy artifact from ansible server to app server
+  win_get_url:
+    url: 'http://ansible.surescripts-dev.qa:8000/{{ repository }}/{{ appName }}/{{ build }}/{{ artifacts }}'
+    dest: 'C:\!Surescripts\package\{{ repository }}\{{ build }}\{{ artifacts }}'
+
+- name: Copy artifact from ansible server to app server
+  win_get_url:
+    url: 'http://ansible.surescripts-dev.qa:8000/{{ repository }}/{{ appName }}/{{ build }}/deploy.zip'
+    dest: 'C:\!Surescripts\package\{{ repository }}\{{ build }}\deploy.zip'
+
+#Unarchive is a linux only module
+#- name: Unarchive artifact
+#  unarchive: src=C:\!Surescripts\package\{{ repository }}\{{ build }}\{{ artifacts }} dest=C:\!Surescripts\package\{{ repository }}\{{ build }}\ copy=no
+
+#- name: Unarchive deploy tools
+#  unarchive: src=C:\!Surescripts\package\{{ repository }}\{{ build }}\deploy.zip dest=C:\!Surescripts\package\{{ repository }}\{{ build }}\ copy=no
+
 #Could add a local_action to take server out of F5 here
 
-- name: Deploy Launcher
-  script: deployLauncher.ps1 -env {{ env }} -name {{ name }} -job {{ repository }} -build {{ jenkins_output.build }} -deploy {{ deploy }} -appName {{ appName }} -artifacts {{ artifacts }}  -installArguments "{{ installArguments }}" -stage {{ stage }}
-  register: deployLauncher
-- debug: var=deployLauncher
+- name: Call deploy.ps1
+  script: 'wrapper.ps1 -env {{ env }} -name {{ name }} -job {{ repository }} -build {{ jenkins_output.build }} -deploy {{ deploy }} -appName {{ appName }} -artifacts {{ artifacts }}  -installArguments "{{ installArguments|toPowershell }}" -stage {{ stage }}'
 
 - name: Clean up old packages, keep the 3 most recent builds (only cleans within a repository)
-  shell:  find /data01/downloads/{{ repository }}/{{ appName }}  -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | head -n -3 | xargs echo #rm -rf
+  shell:  find /data01/downloads/{{ repository }}/{{ appName }}  -maxdepth 1 -mindepth 1 -type d -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | head -n -3 | xargs rm -rf
   register: cleanup
   delegate_to: 127.0.0.1
-
-- debug: msg="{{ cleanup }}"

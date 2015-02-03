@@ -1,4 +1,10 @@
----
+--- 
+- name: Get secure vars
+  include_vars: "{{ env }}/{{ datacenter }}/secure.yml"
+  when: env=="production" or env=="staging" or env=="beta"
+  no_log: true
+  tags: config
+
 - name: Do some jenkins
   jenkins: env={{ env }} repository={{ repository }} build={{ build }} artifact={{ artifacts }} findArtifact=yes writeDescription=yes 
   register: jenkins_output
@@ -46,11 +52,15 @@
     - rollback
 
 #- name: define deploy
-# set_fact: deploy={{ jenkins_output.build }}-{{ timestamp.stdout }}
-# tags: stage
+ # set_fact: deploy={{ jenkins_output.build }}
+ #set_fact: deploy={{ jenkins_output.build }}-{{ timestamp.stdout }}
+#  tags: stage
+
+#- debug: msg="{{ vars }}"
+ # tags: stage
   
 - name: Set deploy fact to tower job id
-  set_fact: deploy={{ vars.tower_job_id }}
+  set_fact: deploy={{ tower_job_id }}
   tags:
     - config
     - stage
@@ -130,7 +140,7 @@
   tags: stage
 
 - name: make shell scripts executable
-  command: find {{ remoteFolder }} -name *.sh -type f -exec chmod gu+x {} \;
+  command: find {{ remoteBuildFolder }} -name *.sh -type f -exec chmod gu+x {} \;
   tags: stage
 
 - name: find post_install script
@@ -139,13 +149,14 @@
   tags: stage
 
 - name: run post_install script
-  shell: ". /etc/profile; {{ post_install.stdout }}"
+  shell: ". /etc/profile; {{ post_install.stdout }} {{ post_install_parameters }}"
+  sudo: yes
   when: post_install.stdout|trim != ""
-  register: post_install_output
+ # register: post_install_output
   tags: stage
 
-- debug: msg="{{ post_install_output }}"
-  tags: stage
+#- debug: msg="{{ post_install_output }}"
+#  tags: stage
 
 - name: Set previous when latest exists
   file: src={{ latest_deploy.stat.lnk_source }} dest={{ remoteFolder}}previous_deploy group={{ account }} state=link
@@ -218,7 +229,7 @@
   #sudo: yes
   register: start
   tags: 
-    - activate
+    - start
     - rollback
 
 - name: status of application
@@ -226,8 +237,9 @@
   #sudo: yes
   register: status
   tags: 
-   - activate
-   - rollback
+    - start
+    - activate
+    - rollback
  
 - name: Create VERSION file
   template: src=VERSION.j2 dest={{ remoteBuildFolder }}/VERSION group={{ account }} #owner={{ account }}
