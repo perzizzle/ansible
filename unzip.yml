@@ -1,0 +1,9 @@
+---
+- name: Unzip test
+  hosts: all
+  gather_facts: false
+
+  tasks:
+  
+  - name: Unzip artifact
+    unzip: source=C:\!Surescripts\package\edge-master\test\EdgeTestTool.Web.zip destination=C:\!Surescripts\package\edge-master\test\
