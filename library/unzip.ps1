@@ -7,15 +7,12 @@ $params = Parse-Args $args;
 
 $result = New-Object PSObject -Property @{
     changed = $false
-	success = $false
-	output = ""
-	source = ""
-	destination = ""
+    success = $false
+    output = ""
 }
 
 If ($params.source) {
     $source = $params.source
-	$result.source = $source
 }
 Else {
     Fail-Json $result "missing required argument: source"
@@ -23,7 +20,6 @@ Else {
 
 If ($params.destination) {
     $destination = $params.destination
-	$result.destination = $destination
 }
 Else {
     Fail-Json $result "missing required argument: destination"
@@ -35,6 +31,10 @@ If ($params.exclude) {
     $exclude = $params.exclude
 }
 
+If(!(Test-Path $source)) {
+	$result.output += "$source file does not exist"
+	Fail-Json $result
+}
 
 try {
     $psource = $source
@@ -42,31 +42,31 @@ try {
         $psource = '{0}\{1}' -f $psource, $include
     }
     $result.output += "Extract-ZipFile"
-    $result.output += ("Extracting Zip File from {0} to {1}" -f $psource, $destination)	    
-	$shell_app = new-object -com shell.application
-	$sourceFolder = $shell_app.namespace($source)
-	$destFolder = $shell_app.namespace($destination)
-    $items = $sourceFolder.Items()    
-    if($include){    
+    $result.output += ("Extracting Zip File from {0} to {1}" -f $psource, $destination)
+    $shell_app = new-object -com shell.application
+    $sourceFolder = $shell_app.namespace($source)
+    $destFolder = $shell_app.namespace($destination)
+    $items = $sourceFolder.Items()
+    if($include){
         $items = $sourceFolder.Items() | ?{$_.Name -eq $include}
     }
-    elseif($exclude){    
+    elseif($exclude){
         $items = $sourceFolder.Items() | ?{$_.Name -ne $exclude}
-    }    
+    }
 
     $items | ?{ $_.IsFolder } | %{ $destFolder.CopyHere($_.GetFolder, 16) }
     $items | ?{ !$_.IsFolder } | %{ $destFolder.CopyHere($_, 16) }
-    	
+
     $result.output += ('Extracting {0} complete.' -f $psource)
 
-	[System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell_app) | Out-Null
-	$result.success = $true
-	$result.changed = $true
-	
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell_app) | Out-Null
+    $result.success = $true
+    $result.changed = $true
+
 }
 catch {
-	$result.output += $_.Exception.Message
-	Fail-Json  $result
+    $result.output += $_.Exception.Message
+    Fail-Json  $result
 }
 
 If ($result.success) {

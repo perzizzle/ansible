@@ -38,6 +38,6 @@ $ ansible -i hosts -m unzip -a "source=file.zip destination=c:\" all
   gather_facts: false
   tasks:
     - name: Unzip file
-      unzip: source="C:\File.zip" destination="C:\"
+      unzip: source=C:\File.zip destination=C:\
 
 '''
