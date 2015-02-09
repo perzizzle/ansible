@@ -15,14 +15,14 @@ If ($params.source) {
     $source = $params.source
 }
 Else {
-    Fail-Json $result "missing required argument: source"
+    Fail-Json (New-Object PSObject $fail) "missing required argument: source"
 }
 
 If ($params.destination) {
     $destination = $params.destination
 }
 Else {
-    Fail-Json $result "missing required argument: destination"
+    Fail-Json (New-Object PSObject $fail) "missing required argument: destination"
 }
 
 If ($params.include) {
@@ -38,13 +38,12 @@ If ($params.creates) {
 
 If( $creates -and (Test-Path $destination/$creates)) {
     $result.output += "File already exists, not unzipping"
-	$result.success = $true
-    Exit-Json $result  
+    $result.success = $true
+    Exit-Json $result
 }
 
 If(!(Test-Path $source)) {
-	$result.output += "$source file does not exist"
-	Fail-Json $result
+    Fail-Json (New-Object PSObject $fail) "$source file does not exist"
 }
 
 try {
@@ -52,6 +51,7 @@ try {
     if($include){
         $psource = '{0}\{1}' -f $psource, $include
     }
+
     $result.output += "Extract-ZipFile"
     $result.output += ("Extracting Zip File from {0} to {1}" -f $psource, $destination)
     $shell_app = new-object -com shell.application
@@ -76,8 +76,7 @@ try {
 
 }
 catch {
-    $result.output += $_.Exception.Message
-    Fail-Json  $result
+    Fail-Json (New-Object PSObject $fail)  $_.Exception.Message
 }
 
 If ($result.success) {
