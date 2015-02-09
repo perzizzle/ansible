@@ -24,11 +24,22 @@ If ($params.destination) {
 Else {
     Fail-Json $result "missing required argument: destination"
 }
+
 If ($params.include) {
     $include = $params.include
 }
 If ($params.exclude) {
     $exclude = $params.exclude
+}
+
+If ($params.creates) {
+    $creates = $params.creates
+}
+
+If( $creates -and (Test-Path $destination/$creates)) {
+    $result.output += "File already exists, not unzipping"
+	$result.success = $true
+    Exit-Json $result  
 }
 
 If(!(Test-Path $source)) {

@@ -17,12 +17,24 @@ options:
     required: true
     default: null
     aliases: []
-  source:
+    source:
     description:
       - Source of zip file
     required: true
     default: null
     aliases: []
+    include:
+    description:
+      - Include this file when unzipped
+    required: false
+    exclude:
+    description:
+      - Exclude this file when unzipped
+    required: false
+    creates:
+    description:
+      - Only unzip if this file does not already exist
+    required: false 
 author: Michael Perzel / Justin Rocco
 '''
 
